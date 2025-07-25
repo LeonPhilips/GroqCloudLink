@@ -1,0 +1,11 @@
+{
+  "domain": "groq_cloud_link",
+  "name": "Groq Cloud Link",
+  "codeowners": ["@LeonPhilips"],
+  "config_flow": true,
+  "dependencies": ["conversation"],
+  "documentation": "https://www.home-assistant.io/integrations/groq_cloud_link",
+  "iot_class": "cloud_push",
+  "quality_scale": "bronze",
+  "requirements": ["groq==0.29.0"]
+}
