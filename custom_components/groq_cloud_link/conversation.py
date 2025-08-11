@@ -1,7 +1,7 @@
 """Conversation support for Groq Cloud."""
 
-from collections.abc import AsyncGenerator
 import json
+from collections.abc import AsyncGenerator
 from typing import Any, Literal
 
 import groq
@@ -17,8 +17,6 @@ from groq.types.chat import (
 from groq.types.chat.chat_completion_message_tool_call_param import Function
 from groq.types.shared_params.function_definition import FunctionDefinition
 from groq.types.shared_params.function_parameters import FunctionParameters
-from voluptuous_openapi import convert
-
 from homeassistant.components.conversation.chat_log import (
     AssistantContent,
     AssistantContentDeltaDict,
@@ -37,11 +35,13 @@ from homeassistant.components.conversation.models import (
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, MATCH_ALL
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, llm
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import llm
 from homeassistant.helpers.chat_session import async_get_chat_session
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.intent import IntentResponse
 from homeassistant.util.ulid import ulid_now
+from voluptuous_openapi import convert
 
 from .const import (
     CONF_MODEL_IDENTIFIER,
@@ -62,7 +62,8 @@ async def async_setup_entry(
 ) -> None:
     """Set up Groq Cloud Link from a config entry."""
 
-    def action():
+    def action() -> groq.AsyncClient | BaseException:
+        """Create the groq Client in the executor to prevent blocking."""
         try:
             return groq.AsyncClient(api_key=entry.data[CONF_API_KEY])
         except BaseException as e:  # noqa: BLE001
@@ -97,8 +98,7 @@ def _fix_invalid_arguments(value: str) -> Any:
 def domain_fixup(
     obj: Any,
 ) -> Any:
-    """Replaces the domain schema type to a string instead of an array."""
-
+    """Replace the domain schema type to a string instead of an array."""
     if isinstance(obj, list):
         for i in range(len(obj)):
             obj[i] = domain_fixup(obj[i])
@@ -127,7 +127,7 @@ class GroqConversationEntity(ConversationEntity):
     def __init__(
         self, entry: ConfigEntry[groq.AsyncClient], sub_entry: ConfigSubentry
     ) -> None:
-        """Initializes the entity with the API handle."""
+        """Initialize the entity with the API handle."""
         super().__init__()
 
         self.unique_id = f"{entry.title}_{sub_entry.data.get(CONF_MODEL_IDENTIFIER)}"
@@ -198,11 +198,14 @@ class GroqConversationEntity(ConversationEntity):
                 continue_conversation=chat_log.continue_conversation,
             )
 
-    async def _fullfill_request(
+    async def _fullfill_request(  # noqa: PLR0912
         self, chat_log: ChatLog, user_input: ConversationInput
     ) -> AsyncGenerator[AssistantContentDeltaDict]:
-        assert type(self.client) is groq.AsyncGroq
+        """
+        Fulfills the request by calling the Groq API.
 
+        Converts the chat log to the format expected by the API.
+        """
         await chat_log.async_provide_llm_data(
             user_input.as_llm_context(DOMAIN),
             self.llm_apis,

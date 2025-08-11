@@ -6,7 +6,6 @@ from typing import Any, TypedDict
 
 import groq
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -75,7 +74,7 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(
-        cls, config_entry: ConfigEntry
+        cls, _config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """Return subentries supported by this integration."""
         return {}
@@ -84,7 +83,6 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the initial step."""
-
         errors: dict[str, str] = {}
 
         if user_input is None:
@@ -98,7 +96,8 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if CONF_MODEL_IDENTIFIER not in user_input:
             # Verify api key and let user select model
 
-            def action():
+            def action() -> groq.AsyncClient | BaseException:
+                """Create the groq Client in the executor to prevent blocking."""
                 try:
                     return groq.AsyncClient(api_key=user_input[CONF_API_KEY])
                 except BaseException as e:  # noqa: BLE001
