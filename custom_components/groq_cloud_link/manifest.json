@@ -1,7 +1,6 @@
 {
   "domain": "groq_cloud_link",
   "name": "Groq Cloud Link",
-  "version": "0.1.2",
   "codeowners": [
     "@LeonPhilips"
   ],
@@ -10,10 +9,11 @@
     "conversation"
   ],
   "documentation": "https://github.com/LeonPhilips/GroqCloudLink",
-  "issue_tracker": "https://github.com/LeonPhilips/GroqCloudLink/issues",
   "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/LeonPhilips/GroqCloudLink/issues",
   "quality_scale": "bronze",
   "requirements": [
     "groq==0.29.0"
-  ]
+  ],
+  "version": "0.1.2"
 }
