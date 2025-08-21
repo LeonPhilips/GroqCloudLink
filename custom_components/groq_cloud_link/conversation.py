@@ -1,7 +1,7 @@
 """Conversation support for Groq Cloud."""
 
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from typing import Any, Literal
 
 import groq
@@ -21,6 +21,7 @@ from homeassistant.components.conversation.chat_log import (
     AssistantContent,
     AssistantContentDeltaDict,
     ChatLog,
+    Content,
     SystemContent,
     ToolResultContent,
     UserContent,
@@ -34,11 +35,10 @@ from homeassistant.components.conversation.models import (
 )
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, MATCH_ALL
-from homeassistant.core import HomeAssistant
+
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import llm
 from homeassistant.helpers.chat_session import async_get_chat_session
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.intent import IntentResponse
 from homeassistant.util.ulid import ulid_now
 from voluptuous_openapi import convert
@@ -53,35 +53,6 @@ from .const import (
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10
-
-
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry[groq.AsyncClient],
-    async_add_entities: AddConfigEntryEntitiesCallback,
-) -> None:
-    """Set up Groq Cloud Link from a config entry."""
-
-    def action() -> groq.AsyncClient | BaseException:
-        """Create the groq Client in the executor to prevent blocking."""
-        try:
-            return groq.AsyncClient(api_key=entry.data[CONF_API_KEY])
-        except BaseException as e:  # noqa: BLE001
-            return e
-
-    groq_client_or_err = await hass.async_add_executor_job(action)
-    if isinstance(groq_client_or_err, BaseException):
-        raise groq_client_or_err
-    entry.runtime_data = groq_client_or_err
-
-    for subentry in entry.subentries.values():
-        if subentry.subentry_type != SUBENTRY_MODEL_PARAMS:
-            continue
-
-        async_add_entities(
-            [GroqConversationEntity(entry, subentry)],
-            config_subentry_id=subentry.subentry_id,
-        )
 
 
 def _fix_invalid_arguments(value: str) -> Any:
@@ -140,7 +111,7 @@ class GroqConversationEntity(ConversationEntity):
         )
 
         self._attr_name = sub_entry.data.get(CONF_MODEL_IDENTIFIER)
-
+        self.chat_history: dict[str, list[Content]] = {}
         self.model = sub_entry.data.get(CONF_MODEL, "llama-3.1-8b-instant")
         self.temperature = sub_entry.data.get(CONF_TEMPERATURE, 1.0)
         self.client: groq.AsyncGroq = entry.runtime_data
@@ -156,6 +127,11 @@ class GroqConversationEntity(ConversationEntity):
     def supported_languages(self) -> list[str] | Literal["*"]:
         """Indicate that we support all languages."""
         return MATCH_ALL
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
+        """Returns the chat history for use in the UI."""
+        return {"chat_history": self.chat_history}
 
     async def async_process(self, user_input: ConversationInput) -> ConversationResult:
         """Process a sentence."""
@@ -192,6 +168,7 @@ class GroqConversationEntity(ConversationEntity):
             intent_response.async_set_speech(
                 (last_message is not None and (last_message.content or "")) or ""
             )
+            self.chat_history[chat_log.conversation_id] = chat_log.content
             return ConversationResult(
                 response=intent_response,
                 conversation_id=chat_log.conversation_id,
