@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any
 
 import groq
 import voluptuous as vol
@@ -10,7 +10,6 @@ from homeassistant import config_entries
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlowResult,
-    ConfigSubentryData,
     ConfigSubentryFlow,
 )
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL
@@ -52,14 +51,6 @@ MODEL_SCHEMA = vol.Schema(
         ): TextSelector(TextSelectorConfig(multiline=True)),
     }
 )
-
-
-class ModelParameters(TypedDict):
-    """Parameters for AI models."""
-
-    friendly_name: str
-    model: str
-    temperature: float
 
 
 class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -154,22 +145,16 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
         main_config_data = {
             CONF_AUTH_IDENTIFIER: self.auth_params[CONF_AUTH_IDENTIFIER],
             CONF_API_KEY: self.auth_params[CONF_API_KEY],
-        }
-
-        subconfig_data = ConfigSubentryData(
-            data={
+            SUBENTRY_MODEL_PARAMS: {
                 CONF_MODEL_IDENTIFIER: user_input[CONF_MODEL_IDENTIFIER],
                 CONF_MODEL: user_input[CONF_MODEL],
                 CONF_TEMPERATURE: user_input[CONF_TEMPERATURE],
+                CONF_PROMPT: user_input[CONF_PROMPT],
                 CONF_LLM_HASS_API: user_input[CONF_LLM_HASS_API],
             },
-            subentry_type=SUBENTRY_MODEL_PARAMS,
-            title=user_input[CONF_MODEL_IDENTIFIER],
-            unique_id=None,
-        )
-
+        }
         return self.async_create_entry(
             title=self.auth_params[CONF_AUTH_IDENTIFIER],
             data=main_config_data,
-            subentries=[subconfig_data],
+            subentries=[],
         )

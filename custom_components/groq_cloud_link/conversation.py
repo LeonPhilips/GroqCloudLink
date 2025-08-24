@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import AsyncGenerator
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import groq
 from groq.types.chat import (
@@ -32,23 +32,23 @@ from homeassistant.components.conversation.models import (
     ConversationInput,
     ConversationResult,
 )
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
-from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, MATCH_ALL
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import llm
 from homeassistant.helpers.chat_session import async_get_chat_session
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.intent import IntentResponse
+from homeassistant.helpers.llm import AssistAPI
 from homeassistant.util.ulid import ulid_now
 from voluptuous_openapi import convert
 
+if TYPE_CHECKING:
+    from . import GroqDevice
+
 from .const import (
-    CONF_MODEL_IDENTIFIER,
-    CONF_PROMPT,
-    CONF_TEMPERATURE,
     DOMAIN,
-    SUBENTRY_MODEL_PARAMS,
 )
 
 # Max number of back and forth with the LLM to generate a response
@@ -57,31 +57,14 @@ MAX_TOOL_ITERATIONS = 10
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry[groq.AsyncClient],
+    entry: ConfigEntry["GroqDevice"],
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Groq Cloud Link from a config entry."""
-
-    def action() -> groq.AsyncClient | BaseException:
-        """Create the groq Client in the executor to prevent blocking."""
-        try:
-            return groq.AsyncClient(api_key=entry.data[CONF_API_KEY])
-        except BaseException as e:  # noqa: BLE001
-            return e
-
-    groq_client_or_err = await hass.async_add_executor_job(action)
-    if isinstance(groq_client_or_err, BaseException):
-        raise groq_client_or_err
-    entry.runtime_data = groq_client_or_err
-
-    for subentry in entry.subentries.values():
-        if subentry.subentry_type != SUBENTRY_MODEL_PARAMS:
-            continue
-
-        async_add_entities(
-            [GroqConversationEntity(entry, subentry)],
-            config_subentry_id=subentry.subentry_id,
-        )
+    async_add_entities(
+        [hass.data[DOMAIN][entry.entry_id].entities.conversation],
+        update_before_add=True,
+    )
 
 
 def _fix_invalid_arguments(value: str) -> Any:
@@ -124,33 +107,31 @@ class GroqConversationEntity(ConversationEntity):
 
     _attr_supports_streaming = True
 
-    def __init__(
-        self, entry: ConfigEntry[groq.AsyncClient], sub_entry: ConfigSubentry
-    ) -> None:
+    def __init__(self, device: "GroqDevice") -> None:
         """Initialize the entity with the API handle."""
         super().__init__()
-
-        self.unique_id = f"{entry.title}_{sub_entry.data.get(CONF_MODEL_IDENTIFIER)}"
-        self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            entry_type=dr.DeviceEntryType.SERVICE,
-            name=f"{entry.title}",
-            manufacturer="Groq Cloud Link",
-            model=f"{sub_entry.data.get(CONF_MODEL)}",
-        )
-
-        self._attr_name = sub_entry.data.get(CONF_MODEL_IDENTIFIER)
-
-        self.model = sub_entry.data.get(CONF_MODEL, "llama-3.1-8b-instant")
-        self.temperature = sub_entry.data.get(CONF_TEMPERATURE, 1.0)
-        self.client: groq.AsyncGroq = entry.runtime_data
+        self.device = device
         self.language: str | None = None
-        self.llm_apis: list[str] = sub_entry.data.get(CONF_LLM_HASS_API, [])
-        self.prompt: str = sub_entry.data.get(
-            CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT
-        )
-        if sub_entry.data.get(CONF_LLM_HASS_API):
-            self._attr_supported_features = ConversationEntityFeature.CONTROL
+
+        for api in device.model_parameters.apis:
+            if isinstance(api, AssistAPI):
+                self._attr_supported_features = ConversationEntityFeature.CONTROL
+                break
+
+    @property
+    def name(self) -> str:
+        """Return the name of the conversation Entity."""
+        return self.device.model_parameters.model_identifier
+
+    @property
+    def unique_id(self) -> str:
+        """Return the name of the sensor."""
+        return self.device.model_parameters.model_identifier
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info from our GroqDevice."""
+        return self.device.device_info
 
     @property
     def supported_languages(self) -> list[str] | Literal["*"]:
@@ -208,8 +189,8 @@ class GroqConversationEntity(ConversationEntity):
         """
         await chat_log.async_provide_llm_data(
             user_input.as_llm_context(DOMAIN),
-            self.llm_apis,
-            self.prompt,
+            [api.id for api in self.device.model_parameters.apis],
+            self.device.model_parameters.prompt,
             user_input.extra_system_prompt,
         )
 
@@ -281,8 +262,8 @@ class GroqConversationEntity(ConversationEntity):
             for t in tool_definitions
         ]
 
-        stream = await self.client.chat.completions.create(
-            model=self.model,
+        stream = await self.device.get_client().chat.completions.create(
+            model=self.device.model_parameters.model,
             messages=chat_history,
             tools=tools,
             temperature=0.6,
@@ -290,11 +271,15 @@ class GroqConversationEntity(ConversationEntity):
             top_p=0.95,
             stream=True,
             stop=None,
+            extra_body={"stream_options": {"include_usage": True}},
         )
 
         chunk: AssistantContentDeltaDict = {"role": "assistant"}
         try:
             async for part in stream:
+                if part.usage is not None:
+                    await self.device.track_usage(part.usage)
+
                 for choice in part.choices:
                     if "role" in chunk and choice.delta.content is not None:
                         yield chunk  # Indicate that we're starting a new message.
@@ -316,6 +301,7 @@ class GroqConversationEntity(ConversationEntity):
                         )
 
                     yield chunk
+
         except groq.APIError as e:
             chunk = {"role": "assistant", "content": f"Error: {e.message}\n\n{e.body}"}
             yield chunk
