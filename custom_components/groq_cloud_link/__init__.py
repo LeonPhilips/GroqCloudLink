@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from enum import Enum
+from typing import Awaitable, Callable
 
 import groq
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.llm import API, async_get_apis
 
 from .const import (
@@ -19,9 +23,10 @@ from .const import (
     SUBENTRY_MODEL_PARAMS,
 )
 from .conversation import GroqConversationEntity
-from .sensor import UsedTokensEntity
+from .number import GroqNumberEntity
+from .sensor import GroqEnumSensor, GroqTimeTrackedEntity
 
-PLATFORMS = [Platform.CONVERSATION, Platform.SENSOR]
+PLATFORMS = [Platform.CONVERSATION, Platform.SENSOR, Platform.NUMBER]
 
 
 async def async_setup_entry(
@@ -61,7 +66,42 @@ class Entities:
     """The entities that the GroqDevice has references to."""
 
     conversation: GroqConversationEntity
-    tokens: UsedTokensEntity
+    tokens: GroqTimeTrackedEntity[int]
+    requests: GroqTimeTrackedEntity[int]
+
+    device_status: GroqEnumSensor[GroqDeviceState]
+    rate_limit_reason: GroqEnumSensor[GroqDeviceRateLimitReason]
+
+    max_tokens_per_min: GroqNumberEntity[int]
+    max_requests_per_min: GroqNumberEntity[int]
+
+    def sensor_entities(self) -> list[Entity]:
+        """Return all entities of the Sensor type."""
+        return [self.tokens, self.requests, self.device_status, self.rate_limit_reason]
+
+    def conversation_entities(self) -> list[Entity]:
+        """Return all entities of the Conversation type."""
+        return [self.conversation]
+
+    def number_entities(self) -> list[Entity]:
+        """Return all entities of the Conversation type."""
+        return [self.max_tokens_per_min, self.max_requests_per_min]
+
+
+class GroqDeviceState(Enum):
+    """The device state of the Groq device."""
+
+    READY = "READY"
+    PROCESSING = "PROCESSING"
+    RATE_LIMITED = "RATE_LIMITED"
+
+
+class GroqDeviceRateLimitReason(Enum):
+    """The reason for being rate limited."""
+
+    REASON_NONE = "None"
+    REASON_TOO_MANY_REQUESTS = "Request count"
+    REASON_TOO_MANY_TOKENS = "Token usage"
 
 
 class GroqDevice:
@@ -120,7 +160,46 @@ class GroqDevice:
 
         self.entities = Entities(
             conversation=GroqConversationEntity(self),
-            tokens=UsedTokensEntity(self),
+            tokens=GroqTimeTrackedEntity(
+                self, expiry_seconds=60, default=0, title="Tokens", unit="Tokens/min"
+            ),
+            requests=GroqTimeTrackedEntity(
+                self,
+                expiry_seconds=60,
+                default=0,
+                title="Requests",
+                unit="Requests/min",
+            ),
+            max_tokens_per_min=GroqNumberEntity(
+                self,
+                title="Max tokens/min",
+                unit="Tokens/min",
+                min_value=1,
+                max_value=500000,
+                step=100,
+                initial=5000,
+                on_change=None,
+            ),
+            max_requests_per_min=GroqNumberEntity(
+                self,
+                title="Max requests/min",
+                unit="Requests/min",
+                min_value=1,
+                max_value=600,
+                step=1,
+                initial=30,
+                on_change=None,
+            ),
+            rate_limit_reason=GroqEnumSensor(
+                self,
+                title="Rate limit reason",
+                initial=GroqDeviceRateLimitReason.REASON_NONE,
+            ),
+            device_status=GroqEnumSensor(
+                self,
+                title="State",
+                initial=GroqDeviceState.READY,
+            ),
         )
 
     async def track_usage(self, usage: groq.types.CompletionUsage) -> None:
@@ -128,7 +207,37 @@ class GroqDevice:
         if self.entities is None:
             msg = "Prepare not called before accessing track_usage()"
             raise AssertionError(msg)
-        self.entities.tokens.track(usage)
+        await self.entities.tokens.track(usage.total_tokens)
+
+    async def add_request(self) -> None:
+        """Tracks the request count. Called from the conversation entity."""
+        if self.entities is None:
+            msg = "Prepare not called before accessing add_request()"
+            raise AssertionError(msg)
+        await self.entities.requests.track(1)
+
+    async def wait_for_rate_limit(
+        self, message_callback: Callable[[str], Awaitable[None]]
+    ):
+        if self.entities is None:
+            msg = "Prepare not called before accessing wait_for_rate_limit()"
+            raise AssertionError(msg)
+
+        ## TODO: Implement event to wait for shenanigans
+        event = await self.entities.tokens.wait_for(lambda tokens: tokens < self.entities.max_tokens_per_min.get_value())
+
+        if self.entities.tokens.state > :
+            self.entities.device_status.set(GroqDeviceState.RATE_LIMITED)
+            self.entities.rate_limit_reason.set(
+                GroqDeviceRateLimitReason.REASON_TOO_MANY_REQUESTS
+            )
+            await message_callback("Waiting for request quota...")
+            asyncio.Event.set
+            while (
+                self.entities.tokens.state
+                > self.entities.max_tokens_per_min.get_value()
+            ):
+                await asyncio.sleep(1)
 
     def get_entities(self) -> Entities:
         """Add all relevant entities for this device."""

@@ -62,7 +62,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up Groq Cloud Link from a config entry."""
     async_add_entities(
-        [hass.data[DOMAIN][entry.entry_id].entities.conversation],
+        hass.data[DOMAIN][entry.entry_id].entities.conversation_entities(),
         update_before_add=True,
     )
 
@@ -262,6 +262,7 @@ class GroqConversationEntity(ConversationEntity):
             for t in tool_definitions
         ]
 
+        await self.device.add_request()
         stream = await self.device.get_client().chat.completions.create(
             model=self.device.model_parameters.model,
             messages=chat_history,
