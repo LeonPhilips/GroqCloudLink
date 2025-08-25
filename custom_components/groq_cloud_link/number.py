@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING, cast
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import DOMAIN
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from . import GroqDevice
 
 
@@ -28,7 +31,7 @@ async def async_setup_entry(
     )
 
 
-class GroqNumberEntity[T: (int, float)](NumberEntity):
+class GroqNumberEntity[T: (int, float)](NumberEntity, RestoreEntity):
     """Representation of an input number entity."""
 
     def __init__(  # noqa: PLR0913
@@ -45,12 +48,24 @@ class GroqNumberEntity[T: (int, float)](NumberEntity):
         """Initialize the number entity."""
         self.device = device
         self.title = title
+        self.initial = initial
         self.on_change: Callable[[T], Awaitable[None]] = on_change or self.__noop
         self._attr_native_min_value = min_value
         self._attr_native_max_value = max_value
         self._attr_native_step = step
         self._attr_native_unit_of_measurement = unit
-        self._attr_native_value = initial
+        self._attr_native_value: float | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the previous setting or set to initial value."""
+        await super().async_added_to_hass()
+        if (last_state := await self.async_get_last_state()) is not None:
+            try:
+                self._attr_native_value = float(last_state.state)
+            except ValueError:
+                self._attr_native_value = self.initial
+        else:
+            self._attr_native_value = self.initial
 
     async def __noop(self, _: T) -> None:
         """Do nothing."""
@@ -82,12 +97,7 @@ class GroqNumberEntity[T: (int, float)](NumberEntity):
 
     def get_value(self) -> T:
         """Get the current value as T."""
-        if T is float:
-            return self._attr_native_value
-        if T is int:
-            return self.native_value
-        msg = "Value was None."
-        raise AssertionError(msg)
+        return cast("T", self._attr_native_value)
 
     async def async_set_native_value(self, value: T) -> None:
         """Handle user updating the value."""

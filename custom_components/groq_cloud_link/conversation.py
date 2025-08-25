@@ -53,6 +53,7 @@ from .const import (
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10
+INTEGRATION_PREFIX = "[GROQ]"
 
 
 async def async_setup_entry(
@@ -210,6 +211,10 @@ class GroqConversationEntity(ConversationEntity):
                 )
                 continue
             if isinstance(message, AssistantContent):
+                if message.content and message.content.startswith(INTEGRATION_PREFIX):
+                    # Hide the internal messages from the AI assistant.
+                    continue
+
                 calls = [
                     ChatCompletionMessageToolCallParam(
                         id=call.id,
@@ -262,6 +267,17 @@ class GroqConversationEntity(ConversationEntity):
             for t in tool_definitions
         ]
 
+        async def _callback(msg: str) -> AssistantContentDeltaDict:
+            chunk: AssistantContentDeltaDict = {
+                "role": "assistant",
+                "content": f"{INTEGRATION_PREFIX} {msg}",
+            }
+            return chunk
+
+        async for message in self.device.pre_request_wait(_callback):
+            if message is not None:
+                yield message
+
         await self.device.add_request()
         stream = await self.device.get_client().chat.completions.create(
             model=self.device.model_parameters.model,
@@ -306,3 +322,7 @@ class GroqConversationEntity(ConversationEntity):
         except groq.APIError as e:
             chunk = {"role": "assistant", "content": f"Error: {e.message}\n\n{e.body}"}
             yield chunk
+        finally:
+            async for message in self.device.post_request_wait(_callback):
+                if message is not None:
+                    yield message

@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
+from numpy import isin
 
 from .const import DOMAIN
 
@@ -114,17 +115,21 @@ class GroqTimeTrackedEntity[T: (int, float)](SensorEntity):
         return self.unit
 
     async def wait_for(
-        self, predicate: Callable[[T], Awaitable[bool]]
+        self, predicate: Callable[[T], Awaitable[bool]] | Callable[[T], bool]
     ) -> asyncio.Event:
         """
         Return an event object that will trigger when the predicate is fulfilled.
 
-        Returns immediately when predicate evaluates to true.
+        Event flag is set immediately when predicate evaluates to true.
         """
         event = asyncio.Event()
 
         async def waiter(value: T) -> bool:
-            if await predicate(value):
+            result = predicate(value)
+            if isinstance(result, Awaitable):
+                result = await result
+
+            if result:
                 event.set()
                 return True
             return False
