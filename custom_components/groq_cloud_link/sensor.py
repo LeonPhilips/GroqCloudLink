@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-from enum import Enum
 import time
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
+from enum import Enum
 from functools import reduce
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -16,7 +17,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
-from numpy import isin
 
 from .const import DOMAIN
 
