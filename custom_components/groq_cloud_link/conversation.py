@@ -13,7 +13,6 @@ from groq.types.chat import (
     ChatCompletionToolMessageParam,
     ChatCompletionToolParam,
     ChatCompletionUserMessageParam,
-    completion_create_params,
 )
 from groq.types.chat.chat_completion_message_tool_call_param import Function
 from groq.types.shared_params.function_definition import FunctionDefinition
@@ -183,7 +182,7 @@ class GroqConversationEntity(ConversationEntity):
                 continue_conversation=chat_log.continue_conversation,
             )
 
-    async def _fullfill_request(  # noqa: PLR0912
+    async def _fullfill_request(  # noqa: PLR0912, PLR0915
         self, chat_log: ChatLog, user_input: ConversationInput
     ) -> AsyncGenerator[AssistantContentDeltaDict]:
         """
