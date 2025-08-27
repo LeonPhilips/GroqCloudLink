@@ -16,6 +16,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.llm import API, async_get_apis
 
 from .const import (
+    CONF_FEATURES,
     CONF_MODEL_IDENTIFIER,
     CONF_PROMPT,
     CONF_TEMPERATURE,
@@ -23,6 +24,7 @@ from .const import (
     SUBENTRY_MODEL_PARAMS,
 )
 from .conversation import GroqConversationEntity
+from .features import LLMFeatures
 from .number import GroqNumberEntity
 from .sensor import GroqEnumSensor, GroqTimeTrackedEntity
 
@@ -62,7 +64,7 @@ class ModelParameters:
     prompt: str
     temperature: float
     apis: list[API] = field(default_factory=list)
-    allow_search: bool = False
+    features: list[LLMFeatures] = field(default_factory=list)
 
 
 @dataclass
@@ -126,7 +128,11 @@ class GroqDevice:
                 if api.id in entry.data[SUBENTRY_MODEL_PARAMS][CONF_LLM_HASS_API]
             ],
             prompt=entry.data[SUBENTRY_MODEL_PARAMS][CONF_PROMPT],
-            allow_search=False,
+            features=[
+                feature
+                for feature in LLMFeatures.__members__.values()
+                if feature.name in entry.data[SUBENTRY_MODEL_PARAMS][CONF_FEATURES]
+            ],
         )
         self.device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{self.entry_id}")},

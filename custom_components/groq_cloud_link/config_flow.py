@@ -25,12 +25,14 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_AUTH_IDENTIFIER,
+    CONF_FEATURES,
     CONF_MODEL_IDENTIFIER,
     CONF_PROMPT,
     CONF_TEMPERATURE,
     DOMAIN,
     SUBENTRY_MODEL_PARAMS,
 )
+from .features import LLMFeatures
 
 API_AUTH_SCHEMA = vol.Schema(
     {
@@ -120,7 +122,7 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             )
 
-            added_apis = added_models.extend(
+            model_params = added_models.extend(
                 {
                     vol.Optional(
                         CONF_LLM_HASS_API,
@@ -138,8 +140,31 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         )
                     ),
                 }
+            ).extend(
+                {
+                    vol.Optional(
+                        CONF_FEATURES,
+                        description={
+                            "suggested_value": [
+                                LLMFeatures.ALLOW_BROWSER_SEARCH.name,
+                                LLMFeatures.ALLOW_CODE_EXECUTION.name,
+                            ]
+                        },
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(
+                                    label=x.value,
+                                    value=x.name,
+                                )
+                                for x in LLMFeatures.__members__.values()
+                            ],
+                            multiple=True,
+                        )
+                    ),
+                }
             )
-            return self.async_show_form(data_schema=added_apis, errors=errors)
+            return self.async_show_form(data_schema=model_params, errors=errors)
         self._async_abort_entries_match(user_input)
 
         main_config_data = {
@@ -151,6 +176,7 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_TEMPERATURE: user_input[CONF_TEMPERATURE],
                 CONF_PROMPT: user_input[CONF_PROMPT],
                 CONF_LLM_HASS_API: user_input[CONF_LLM_HASS_API],
+                CONF_FEATURES: user_input[CONF_FEATURES],
             },
         }
         return self.async_create_entry(

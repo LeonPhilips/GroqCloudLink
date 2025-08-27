@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import groq
 from groq.types.chat import (
@@ -13,6 +13,7 @@ from groq.types.chat import (
     ChatCompletionToolMessageParam,
     ChatCompletionToolParam,
     ChatCompletionUserMessageParam,
+    completion_create_params,
 )
 from groq.types.chat.chat_completion_message_tool_call_param import Function
 from groq.types.shared_params.function_definition import FunctionDefinition
@@ -43,6 +44,8 @@ from homeassistant.helpers.intent import IntentResponse
 from homeassistant.helpers.llm import AssistAPI
 from homeassistant.util.ulid import ulid_now
 from voluptuous_openapi import convert
+
+from .features import LLMFeatures
 
 if TYPE_CHECKING:
     from . import GroqDevice
@@ -197,6 +200,10 @@ class GroqConversationEntity(ConversationEntity):
 
         chat_history: list[ChatCompletionMessageParam] = []
 
+        # This only works for GPT-OSS models.
+        # Compound has no parameters to control whether or not search is enabled.
+        networking_allowed = True
+
         for message in chat_log.content:
             if isinstance(message, SystemContent):
                 chat_history.append(
@@ -236,6 +243,12 @@ class GroqConversationEntity(ConversationEntity):
                 continue
 
             if isinstance(message, ToolResultContent):
+                # We disable networking if the user requested additional privacy.
+                # This way, we cannot accidentally leak the active state of our house.
+                networking_allowed = networking_allowed and (
+                    LLMFeatures.ALLOW_SEARCH_WITH_LIVE_DATA
+                    in self.device.model_parameters.features
+                )
                 chat_history.append(
                     ChatCompletionToolMessageParam(
                         content=json.dumps(message.tool_result),
@@ -273,6 +286,15 @@ class GroqConversationEntity(ConversationEntity):
                 "content": f"{INTEGRATION_PREFIX} {msg}",
             }
             return chunk
+
+        if (
+            LLMFeatures.ALLOW_BROWSER_SEARCH in self.device.model_parameters.features
+            and networking_allowed
+        ):
+            tools.append(cast("ChatCompletionToolParam", {"type": "browser_search"}))
+
+        if LLMFeatures.ALLOW_CODE_EXECUTION in self.device.model_parameters.features:
+            tools.append(cast("ChatCompletionToolParam", {"type": "code_interpreter"}))
 
         async for message in self.device.pre_request_wait(_callback):
             if message is not None:
