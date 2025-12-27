@@ -66,12 +66,12 @@ class GroqTimeTrackedEntity[T: (int, float)](SensorEntity):
     @property
     def suggested_object_id(self) -> str | None:
         """Return the unique id of the sensor."""
-        return f"{self.device.model_parameters.model_identifier}_{self.title}"
+        return f"{self.device.settings.model}_{self.title}"
 
     @property
     def unique_id(self) -> str:
         """Return the unique id of the sensor."""
-        return f"{self.device.model_parameters.model_identifier}_{self.title}"
+        return f"{self.device.settings.model}_{self.title}"
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -162,12 +162,12 @@ class GroqEnumSensor[T: Enum](SensorEntity):
     @property
     def suggested_object_id(self) -> str | None:
         """Return the suggested object id."""
-        return f"{self.device.model_parameters.model_identifier}_{self.title}"
+        return f"{self.device.settings.model}_{self.title}"
 
     @property
     def unique_id(self) -> str:
         """Return a unique ID for the sensor."""
-        return f"{self.device.model_parameters.model_identifier}_{self.title}"
+        return f"{self.device.settings.model}_{self.title}"
 
     @property
     def device_info(self) -> DeviceInfo:

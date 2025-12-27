@@ -13,7 +13,7 @@
   "issue_tracker": "https://github.com/LeonPhilips/GroqCloudLink/issues",
   "quality_scale": "bronze",
   "requirements": [
-    "groq==0.29.0"
+    "groq==1.0.0"
   ],
   "version": "0.1.3"
 }

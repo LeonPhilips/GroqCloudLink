@@ -116,7 +116,7 @@ class GroqConversationEntity(ConversationEntity):
         self.device = device
         self.language: str | None = None
 
-        for api in device.model_parameters.apis:
+        for api in device.settings.llm_apis:
             if isinstance(api, AssistAPI):
                 self._attr_supported_features = ConversationEntityFeature.CONTROL
                 break
@@ -124,12 +124,12 @@ class GroqConversationEntity(ConversationEntity):
     @property
     def name(self) -> str:
         """Return the name of the conversation Entity."""
-        return self.device.model_parameters.model_identifier
+        return self.device.settings.model
 
     @property
     def unique_id(self) -> str:
         """Return the name of the sensor."""
-        return self.device.model_parameters.model_identifier
+        return self.device.settings.model
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -192,8 +192,8 @@ class GroqConversationEntity(ConversationEntity):
         """
         await chat_log.async_provide_llm_data(
             user_input.as_llm_context(DOMAIN),
-            [api.id for api in self.device.model_parameters.apis],
-            self.device.model_parameters.prompt,
+            [api.id for api in self.device.settings.llm_apis],
+            self.device.settings.prompt,
             user_input.extra_system_prompt,
         )
 
@@ -246,7 +246,7 @@ class GroqConversationEntity(ConversationEntity):
                 # This way, we cannot accidentally leak the active state of our house.
                 networking_allowed = networking_allowed and (
                     LLMFeatures.ALLOW_SEARCH_WITH_LIVE_DATA
-                    in self.device.model_parameters.features
+                    in self.device.settings.features
                 )
                 chat_history.append(
                     ChatCompletionToolMessageParam(
@@ -287,12 +287,12 @@ class GroqConversationEntity(ConversationEntity):
             return chunk
 
         if (
-            LLMFeatures.ALLOW_BROWSER_SEARCH in self.device.model_parameters.features
+            LLMFeatures.ALLOW_BROWSER_SEARCH in self.device.settings.features
             and networking_allowed
         ):
             tools.append(cast("ChatCompletionToolParam", {"type": "browser_search"}))
 
-        if LLMFeatures.ALLOW_CODE_EXECUTION in self.device.model_parameters.features:
+        if LLMFeatures.ALLOW_CODE_EXECUTION in self.device.settings.features:
             tools.append(cast("ChatCompletionToolParam", {"type": "code_interpreter"}))
 
         async for message in self.device.pre_request_wait(_callback):
@@ -301,10 +301,10 @@ class GroqConversationEntity(ConversationEntity):
 
         await self.device.add_request()
         stream = await self.device.get_client().chat.completions.create(
-            model=self.device.model_parameters.model,
+            model=self.device.settings.model,
             messages=chat_history,
             tools=tools,
-            temperature=0.6,
+            temperature=self.device.settings.temperature,
             max_completion_tokens=4096,
             top_p=0.95,
             stream=True,
