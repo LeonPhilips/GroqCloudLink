@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import groq
@@ -39,6 +38,7 @@ from .features import LLMFeatures
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+    from types import MappingProxyType
 
 
 @dataclass
@@ -260,134 +260,3 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(
                 reason=f"The data you entered yielded no usable configuration: {self.user_input}"
             )
-
-
-#
-# class __AuthenticationFlowOLD(config_entries.ConfigFlow, domain=DOMAIN):
-#     """Config flow for Example integration."""
-#
-#     VERSION = 1
-#
-#     def __init__(self) -> None:
-#         """Create the flow object."""
-#         self.auth_params: dict[str, Any]
-#
-#     @classmethod
-#     @callback
-#     def async_get_supported_subentry_types(
-#         cls, _config_entry: ConfigEntry
-#     ) -> dict[str, type[ConfigSubentryFlow]]:
-#         """Return subentries supported by this integration."""
-#         return {}
-#
-#     async def async_step_user(
-#         self, user_input: dict[str, Any] | None = None
-#     ) -> ConfigFlowResult:
-#         """Handle the initial step."""
-#         errors: dict[str, str] = {}
-#
-#         if user_input is None:
-#             # Ask for authentication (API key)
-#             return self.async_show_form(data_schema=API_AUTH_SCHEMA, errors=errors)
-#
-#         if CONF_API_KEY in user_input:
-#             self.auth_params = user_input
-#
-#         groq_client: groq.AsyncClient | None = None
-#         if CONF_API_KEY not in user_input:
-#             # Verify api key and let user select model
-#
-#             def action() -> groq.AsyncClient | BaseException:
-#                 """Create the groq Client in the executor to prevent blocking."""
-#                 try:
-#                     return groq.AsyncClient(api_key=user_input[CONF_API_KEY])
-#                 except BaseException as e:
-#                     return e
-#
-#             try:
-#                 groq_client_or_err = await self.hass.async_add_executor_job(action)
-#                 if isinstance(groq_client_or_err, BaseException):
-#                     raise groq_client_or_err
-#                 groq_client = groq_client_or_err
-#
-#                 model_list = await groq_client.models.list()
-#                 allowed_models = [model.id for model in model_list.data]
-#             except groq.AuthenticationError:
-#                 errors["base"] = "invalid_auth"
-#                 return self.async_show_form(data_schema=API_AUTH_SCHEMA, errors=errors)
-#
-#             default_model = (
-#                 "llama-3.1-8b-instant"
-#                 if "llama-3.1-8b-instant" in allowed_models
-#                 else None
-#             )
-#
-#             added_models = MODEL_SCHEMA.extend(
-#                 {
-#                     vol.Required(CONF_MODEL, default=default_model): vol.In(
-#                         allowed_models
-#                     )
-#                 }
-#             )
-#
-#             model_params = added_models.extend(
-#                 {
-#                     vol.Optional(
-#                         CONF_LLM_HASS_API,
-#                         description={"suggested_value": []},
-#                     ): SelectSelector(
-#                         SelectSelectorConfig(
-#                             options=[
-#                                 SelectOptionDict(
-#                                     label=api.name,
-#                                     value=api.id,
-#                                 )
-#                                 for api in llm.async_get_apis(self.hass)
-#                             ],
-#                             multiple=True,
-#                         )
-#                     ),
-#                 }
-#             ).extend(
-#                 {
-#                     vol.Optional(
-#                         CONF_FEATURES,
-#                         description={
-#                             "suggested_value": [
-#                                 LLMFeatures.ALLOW_BROWSER_SEARCH.name,
-#                                 LLMFeatures.ALLOW_CODE_EXECUTION.name,
-#                             ]
-#                         },
-#                     ): SelectSelector(
-#                         SelectSelectorConfig(
-#                             options=[
-#                                 SelectOptionDict(
-#                                     label=x.value,
-#                                     value=x.name,
-#                                 )
-#                                 for x in LLMFeatures.__members__.values()
-#                             ],
-#                             multiple=True,
-#                         )
-#                     ),
-#                 }
-#             )
-#             return self.async_show_form(data_schema=model_params, errors=errors)
-#         self._async_abort_entries_match(user_input)
-#
-#         main_config_data = {
-#             CONF_API_KEY: self.auth_params[CONF_API_KEY],
-#             SUBENTRY_MODEL_PARAMS: {
-#                 CONF_MODEL: user_input[CONF_MODEL],
-#                 CONF_TEMPERATURE: user_input[CONF_TEMPERATURE],
-#                 CONF_PROMPT: user_input[CONF_PROMPT],
-#                 CONF_LLM_HASS_API: user_input[CONF_LLM_HASS_API],
-#                 CONF_FEATURES: user_input[CONF_FEATURES],
-#             },
-#         }
-#         return self.async_create_entry(
-#             title=self.auth_params[CONF_AUTH_IDENTIFIER],
-#             data=main_config_data,
-#             subentries=[],
-#         )
-#
