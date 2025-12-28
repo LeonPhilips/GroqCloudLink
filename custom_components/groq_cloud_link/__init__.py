@@ -2,32 +2,26 @@
 
 from __future__ import annotations
 
-import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
 import groq
 from homeassistant.components.conversation.chat_log import AssistantContentDeltaDict
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, Platform
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.llm import API, async_get_apis
 
 from custom_components.groq_cloud_link.config_flow import GroqDeviceSettings
+from custom_components.groq_cloud_link.stt import GroqSpeechToTextEntity
+from custom_components.groq_cloud_link.tts import GroqTextToSpeechEntity
 
 from .const import (
-    CONF_FEATURES,
-    CONF_MODEL_IDENTIFIER,
-    CONF_PROMPT,
-    CONF_TEMPERATURE,
     DOMAIN,
-    SUBENTRY_MODEL_PARAMS,
 )
 from .conversation import GroqConversationEntity
-from .features import LLMFeatures
 from .number import GroqNumberEntity
 from .sensor import GroqEnumSensor, GroqTimeTrackedEntity
 
@@ -35,7 +29,13 @@ if TYPE_CHECKING:
     import asyncio
     from collections.abc import AsyncGenerator, Awaitable, Callable
 
-PLATFORMS = [Platform.CONVERSATION, Platform.SENSOR, Platform.NUMBER]
+PLATFORMS = [
+    Platform.CONVERSATION,
+    Platform.SENSOR,
+    Platform.NUMBER,
+    Platform.STT,
+    Platform.TTS,
+]
 
 
 async def async_setup_entry(
@@ -67,6 +67,8 @@ class Entities:
     conversation: GroqConversationEntity
     tokens: GroqTimeTrackedEntity[int]
     requests: GroqTimeTrackedEntity[int]
+    tts: GroqTextToSpeechEntity
+    stt: GroqSpeechToTextEntity
 
     device_status: GroqEnumSensor[GroqDeviceState]
     rate_limit_reason: GroqEnumSensor[GroqDeviceRateLimitReason]
@@ -83,8 +85,16 @@ class Entities:
         return [self.conversation]
 
     def number_entities(self) -> list[Entity]:
-        """Return all entities of the Conversation type."""
+        """Return all entities of the number type."""
         return [self.max_tokens_per_min, self.max_requests_per_min]
+
+    def tts_entities(self) -> list[Entity]:
+        """Return all entities of the TTS type."""
+        return [self.tts]
+
+    def stt_entities(self) -> list[Entity]:
+        """Return all entities of the STT type."""
+        return [self.stt]
 
 
 class GroqDeviceState(Enum):
@@ -163,6 +173,8 @@ class GroqDevice:
                 title="State",
                 initial=GroqDeviceState.READY,
             ),
+            stt=GroqSpeechToTextEntity(self),
+            tts=GroqTextToSpeechEntity(self),
         )
 
     def get_client(self) -> groq.AsyncClient:
