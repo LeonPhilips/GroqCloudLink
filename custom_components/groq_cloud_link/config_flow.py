@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any
 
 import groq
@@ -54,8 +53,10 @@ class GroqDeviceSettings:
     prompt: str = ""
     temperature: float = 1.0
     voice: str = "troy"
-    llm_apis: list[API] = field(default_factory=list)
-    features: list[LLMFeatures] = field(default_factory=list)
+    llm_apis: list[API] = field(default_factory=list, metadata={"serialize": False})
+    features: list[LLMFeatures] = field(
+        default_factory=list, metadata={"serialize": False}
+    )
     entry_id: str = ""
 
     async def create(self, hass: HomeAssistant) -> groq.AsyncGroq:
@@ -66,9 +67,12 @@ class GroqDeviceSettings:
 
     def serialize(self) -> dict[str, str]:
         """Prepare settings for disk storage."""
-        cloned = dataclasses.asdict(self)
-        cloned["features"] = [x.name for x in cloned["features"]]
-        cloned["llm_apis"] = [x.id for x in cloned["llm_apis"]]
+        cloned = {}
+        for f in fields(self):
+            if f.metadata.get("serialize", True):
+                cloned[f.name] = getattr(self, f.name)
+        cloned["features"] = [x.name for x in self.features]
+        cloned["llm_apis"] = [x.id for x in self.llm_apis]
         return cloned
 
     @staticmethod
@@ -197,9 +201,9 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
             settings.model = self.user_input[CONF_MODEL]
 
             settings.llm_apis = [
-                x
-                for x in self.user_input.get(CONF_LLM_HASS_API, [])
-                if x in allowed_apis
+                api
+                for api in allowed_apis
+                if api.id in self.user_input.get(CONF_LLM_HASS_API, [])
             ]
 
             if settings.model not in TOOL_USE_MODELS and len(settings.llm_apis) > 0:
