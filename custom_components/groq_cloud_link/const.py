@@ -12,3 +12,18 @@ CONF_VOICE = "voice"
 CONF_BASE_URL = "base_url"
 
 SUBENTRY_MODEL_PARAMS = "model_parameters"
+
+TOOL_USE_MODELS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+]
+
+BROWSER_SEARCH_MODELS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+]
+
+CODE_INTERPRETER_MODELS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+]

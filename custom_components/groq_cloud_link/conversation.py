@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 import groq
 from groq.types.chat import (
@@ -290,30 +290,31 @@ class GroqConversationEntity(ConversationEntity):
             LLMFeatures.ALLOW_BROWSER_SEARCH in self.device.settings.features
             and networking_allowed
         ):
-            tools.append(cast("ChatCompletionToolParam", {"type": "browser_search"}))
+            tools.append(ChatCompletionToolParam(type="browser_search"))
 
         if LLMFeatures.ALLOW_CODE_EXECUTION in self.device.settings.features:
-            tools.append(cast("ChatCompletionToolParam", {"type": "code_interpreter"}))
+            tools.append(ChatCompletionToolParam(type="code_interpreter"))
 
         async for message in self.device.pre_request_wait(_callback):
             if message is not None:
                 yield message
 
         await self.device.add_request()
-        stream = await self.device.get_client().chat.completions.create(
-            model=self.device.settings.model,
-            messages=chat_history,
-            tools=tools,
-            temperature=self.device.settings.temperature,
-            max_completion_tokens=4096,
-            top_p=0.95,
-            stream=True,
-            stop=None,
-            extra_body={"stream_options": {"include_usage": True}},
-        )
 
-        chunk: AssistantContentDeltaDict = {"role": "assistant"}
         try:
+            stream = await self.device.get_client().chat.completions.create(
+                model=self.device.settings.model,
+                messages=chat_history,
+                tools=tools,
+                temperature=self.device.settings.temperature,
+                max_completion_tokens=4096,
+                top_p=0.95,
+                stream=True,
+                stop=None,
+                extra_body={"stream_options": {"include_usage": True}},
+            )
+
+            chunk: AssistantContentDeltaDict = {"role": "assistant"}
             async for part in stream:
                 if part.usage is not None:
                     await self.device.track_usage(part.usage)

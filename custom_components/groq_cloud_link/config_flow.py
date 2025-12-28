@@ -27,12 +27,15 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    BROWSER_SEARCH_MODELS,
+    CODE_INTERPRETER_MODELS,
     CONF_BASE_URL,
     CONF_FEATURES,
     CONF_PROMPT,
     CONF_TEMPERATURE,
     CONF_VOICE,
     DOMAIN,
+    TOOL_USE_MODELS,
 )
 from .features import LLMFeatures
 
@@ -47,7 +50,7 @@ class GroqDeviceSettings:
 
     api_key: str = ""
     base_url: str | None = None
-    model: str = "llama-3.1-8b-instant"
+    model: str = "openai/gpt-oss-20b"
     prompt: str = ""
     temperature: float = 1.0
     voice: str = "troy"
@@ -121,9 +124,7 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
             allowed_models = [model.id for model in model_list.data]
 
             default_model = (
-                "llama-3.1-8b-instant"
-                if "llama-3.1-8b-instant" in allowed_models
-                else None
+                "openai/gpt-oss-20b" if "openai/gpt-oss-20b" in allowed_models else None
             )
 
             model_schema = vol.Schema(
@@ -194,17 +195,36 @@ class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
             settings.temperature = self.user_input[CONF_TEMPERATURE]
             settings.prompt = self.user_input[CONF_PROMPT]
             settings.model = self.user_input[CONF_MODEL]
+
             settings.llm_apis = [
                 x
                 for x in self.user_input.get(CONF_LLM_HASS_API, [])
                 if x in allowed_apis
             ]
 
+            if settings.model not in TOOL_USE_MODELS and len(settings.llm_apis) > 0:
+                yield self.async_abort(reason="Model does not support tool use.")
+                return
+
             settings.features = [
                 LLMFeatures[name]
                 for name in self.user_input.get(CONF_FEATURES, [])
                 if name in LLMFeatures.__members__
             ]
+
+            if (
+                settings.model not in BROWSER_SEARCH_MODELS
+                and LLMFeatures.ALLOW_BROWSER_SEARCH in settings.features
+            ):
+                yield self.async_abort(reason="Model does not support browser search.")
+                return
+
+            if (
+                settings.model not in CODE_INTERPRETER_MODELS
+                and LLMFeatures.ALLOW_CODE_EXECUTION in settings.features
+            ):
+                yield self.async_abort(reason="Model does not support code execution.")
+                return
 
             voice_schema = vol.Schema(
                 {
