@@ -31,10 +31,10 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
     def __init__(self, device: "GroqDevice") -> None:
         """Initialize the entity."""
         super().__init__()
-        self._attr_unique_id = "groq_tts"
-        self._attr_name = "Groq Cloud TTS"
-        self.default_language = "en-US"
         self.device = device
+        self._attr_unique_id = f"{self.device.settings.entry_id}_groq_tts"
+        self._attr_name = "Groq Cloud TTS"
+        self.default_language = "en"
 
     @property
     def supported_languages(self) -> list[str]:

@@ -71,7 +71,9 @@ class GroqTimeTrackedEntity[T: (int, float)](SensorEntity):
     @property
     def unique_id(self) -> str:
         """Return the unique id of the sensor."""
-        return f"{self.device.settings.model}_{self.title}"
+        return (
+            f"{self.device.settings.entry_id}_{self.device.settings.model}_{self.title}"
+        )
 
     @property
     def device_info(self) -> DeviceInfo:

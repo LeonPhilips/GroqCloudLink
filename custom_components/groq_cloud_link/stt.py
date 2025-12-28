@@ -45,6 +45,7 @@ class GroqSpeechToTextEntity(SpeechToTextEntity):
     def __init__(self, device: "GroqDevice") -> None:
         super().__init__()
         self.device = device
+        self._attr_unique_id = f"{self.device.settings.entry_id}_groq_stt"
 
     @property
     def supported_languages(self) -> list[str]:

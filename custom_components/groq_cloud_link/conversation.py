@@ -129,7 +129,7 @@ class GroqConversationEntity(ConversationEntity):
     @property
     def unique_id(self) -> str:
         """Return the name of the sensor."""
-        return self.device.settings.model
+        return f"{self.device.settings.entry_id}_{self.device.settings.model}"
 
     @property
     def device_info(self) -> DeviceInfo:

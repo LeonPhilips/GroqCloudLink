@@ -83,7 +83,9 @@ class GroqNumberEntity[T: (int, float)](NumberEntity, RestoreEntity):
     @property
     def unique_id(self) -> str:
         """Return a unique ID for the entity."""
-        return f"{self.device.settings.model}_{self.title}"
+        return (
+            f"{self.device.settings.entry_id}_{self.device.settings.model}_{self.title}"
+        )
 
     @property
     def device_info(self) -> DeviceInfo:
