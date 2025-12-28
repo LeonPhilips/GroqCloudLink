@@ -2,9 +2,9 @@ import io
 import wave
 from asyncio import CancelledError
 from collections.abc import AsyncIterable
+from typing import TYPE_CHECKING
 
 import groq
-from git import TYPE_CHECKING
 from homeassistant.components.stt import (
     AudioBitRates,
     AudioChannels,
