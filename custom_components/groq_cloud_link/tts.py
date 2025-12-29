@@ -70,6 +70,7 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
                             model="canopylabs/orpheus-v1-english",
                             voice=self.device.settings.voice,
                             response_format="wav",
+                            sample_rate=16000,
                             input=message,
                         )
                     ).read()
