@@ -1,5 +1,5 @@
 import io
-from functools import reduce
+import re
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -47,59 +47,86 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
         return ["en"]
 
     @staticmethod
-    def __stich(audio_files: list[io.BytesIO]) -> bytes:
+    def __split_long_sentence(sentence: str, max_len: int) -> list[str]:
+        words = sentence.split(" ")
+        chunks = []
+        current = ""
+        for word in words:
+            if not current:
+                current = word
+            elif len(current) + 1 + len(word) <= max_len:
+                current += " " + word
+            else:
+                chunks.append(current)
+                current = word
+        if current:
+            chunks.append(current)
+        return chunks
+
+    @staticmethod
+    def __split_into_blocks(text: str, max_len: int) -> list[str]:
+        sentences = re.findall(r"[^.!?]+[.!?]", text)
+        blocks = []
+        current = ""
+        for sentence in (s.strip() for s in sentences):
+            if len(sentence) > max_len:
+                if current:
+                    blocks.append(current)
+                    current = ""
+                blocks.extend(GroqTextToSpeechEntity.__split_long_sentence(sentence, max_len))
+                continue
+
+            if not current:
+                current = sentence
+            elif len(current) + len(sentence) < max_len:
+                current += " " + sentence
+            else:
+                blocks.append(current)
+                current = sentence
+        if current:
+            blocks.append(current)
+        return blocks
+
+    @staticmethod
+    def __stich(audio_files: list[io.BytesIO]) -> bytes | None:
+        if len(audio_files) == 0:
+            return None
+
         sample_rate: int | None = None
-        stiched: np.ndarray | None = None
+        stiched: list[np.ndarray] = []
         for audio_file in audio_files:
             data: np.ndarray
             samplerate: int
             data, samplerate = soundfile.read(audio_file, dtype="int16")
-            if sample_rate is None or stiched is None:
+            if sample_rate is None:
                 sample_rate = samplerate
-                stiched = data
             elif sample_rate != samplerate:
                 msg = f"Expected sample rate of {sample_rate}, got {samplerate}"
                 raise Exception(msg)
-            np.append(stiched, data)
+            stiched.append(data)
 
         buffer = io.BytesIO()
-        soundfile.write(buffer, stiched, sample_rate, format="WAV")
+        soundfile.write(buffer, np.concatenate(stiched), sample_rate, format="WAV")
 
         return buffer.getvalue()
 
-    async def async_get_tts_audio(
-        self, message: str, language: str, options: dict[str, Any]
-    ) -> TtsAudioType:
+    async def async_get_tts_audio(self, message: str, language: str, options: dict[str, Any]) -> TtsAudioType:
         """Return TTS audio data."""
-        phrases: list[str] = message.split(". ")
-
-        current_stich: list[str] = []
-
+        phrases: list[str] = GroqTextToSpeechEntity.__split_into_blocks(message, MAX_CHARACTERS_PER_REQUEST)
         audio_files: list[io.BytesIO] = []
-        while True:
-            current_count = reduce(
-                lambda count, phrase: count + len(phrase), current_stich, 0
-            )
-            if (
-                len(phrases) > 0
-                and len(phrases[0]) + current_count < MAX_CHARACTERS_PER_REQUEST
-            ):
-                current_stich.append(phrases.pop(0))
-            else:
-                audio_files.append(
-                    io.BytesIO(
-                        await (
-                            await self.device.get_client().audio.speech.create(
-                                model="canopylabs/orpheus-v1-english",
-                                voice=self.device.settings.voice,
-                                response_format="wav",
-                                input=". ".join(current_stich),
-                            )
-                        ).read()
-                    )
+
+        for phrase in phrases:
+            audio_files.append(  # noqa: PERF401 Code readability > micro performance improvements
+                io.BytesIO(
+                    await (
+                        await self.device.get_client().audio.speech.create(
+                            model="canopylabs/orpheus-v1-english",
+                            voice=self.device.settings.voice,
+                            response_format="wav",
+                            input=phrase,
+                        )
+                    ).read()
                 )
-                current_stich.clear()
-                if len(phrases) == 0:
-                    break
+            )
 
         return "wav", GroqTextToSpeechEntity.__stich(audio_files)
