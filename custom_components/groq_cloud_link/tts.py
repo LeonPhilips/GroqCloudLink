@@ -1,8 +1,9 @@
 import io
-import wave
 from functools import reduce
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import soundfile
 from homeassistant.components.tts import TextToSpeechEntity
 from homeassistant.components.tts.const import TtsAudioType
 from homeassistant.config_entries import (
@@ -45,6 +46,27 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
     def supported_languages(self) -> list[str]:
         return ["en"]
 
+    @staticmethod
+    def __stich(audio_files: list[io.BytesIO]) -> bytes:
+        sample_rate: int | None = None
+        stiched: np.ndarray | None = None
+        for audio_file in audio_files:
+            data: np.ndarray
+            samplerate: int
+            data, samplerate = soundfile.read(audio_file, dtype="int16")
+            if sample_rate is None or stiched is None:
+                sample_rate = samplerate
+                stiched = data
+            elif sample_rate != samplerate:
+                msg = f"Expected sample rate of {sample_rate}, got {samplerate}"
+                raise Exception(msg)
+            np.append(stiched, data)
+
+        buffer = io.BytesIO()
+        soundfile.write(buffer, stiched, sample_rate, format="WAV")
+
+        return buffer.getvalue()
+
     async def async_get_tts_audio(
         self, message: str, language: str, options: dict[str, Any]
     ) -> TtsAudioType:
@@ -53,7 +75,7 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
 
         current_stich: list[str] = []
 
-        audio_files: list[bytes] = []
+        audio_files: list[io.BytesIO] = []
         while True:
             current_count = reduce(
                 lambda count, phrase: count + len(phrase), current_stich, 0
@@ -65,41 +87,19 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
                 current_stich.append(phrases.pop(0))
             else:
                 audio_files.append(
-                    await (
-                        await self.device.get_client().audio.speech.create(
-                            model="canopylabs/orpheus-v1-english",
-                            voice=self.device.settings.voice,
-                            response_format="wav",
-                            sample_rate=16000,
-                            input=message,
-                        )
-                    ).read()
+                    io.BytesIO(
+                        await (
+                            await self.device.get_client().audio.speech.create(
+                                model="canopylabs/orpheus-v1-english",
+                                voice=self.device.settings.voice,
+                                response_format="wav",
+                                input=". ".join(current_stich),
+                            )
+                        ).read()
+                    )
                 )
                 current_stich.clear()
                 if len(phrases) == 0:
                     break
 
-        params = None
-        raw_frames = []
-
-        for i, data in enumerate(audio_files):
-            with wave.open(io.BytesIO(data), "rb") as w:
-                if i == 0:
-                    params = w.getparams()
-                elif w.getparams() != params:
-                    msg = "WAV formats must match"
-                    raise ValueError(msg)
-
-                raw_frames.append(w.readframes(w.getnframes()))
-
-        if params is None:
-            return None, None
-
-        # Write combined WAV
-        output = io.BytesIO()
-        with wave.open(output, "wb") as w:
-            w.setparams(params)
-            for frames in raw_frames:
-                w.writeframes(frames)
-
-        return "wav", output.getvalue()
+        return "wav", GroqTextToSpeechEntity.__stich(audio_files)
