@@ -16,5 +16,5 @@
     "groq==1.0.0",
     "soundfile==0.13.1"
   ],
-  "version": "0.2.2"
+  "version": "0.2.3"
 }
