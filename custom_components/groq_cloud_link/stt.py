@@ -172,9 +172,7 @@ class GroqSpeechToTextEntity(SpeechToTextEntity):
     def supported_channels(self) -> list[AudioChannels]:
         return [AudioChannels.CHANNEL_MONO]
 
-    async def async_process_audio_stream(
-        self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]
-    ) -> SpeechResult:
+    async def async_process_audio_stream(self, metadata: SpeechMetadata, stream: AsyncIterable[bytes]) -> SpeechResult:
         try:
             pcm_audio = b""
             async for chunk in stream:
@@ -190,7 +188,7 @@ class GroqSpeechToTextEntity(SpeechToTextEntity):
 
             transcription = await self.device.get_client().audio.transcriptions.create(
                 file=("input.wav", wav_buffer),
-                model="whisper-large-v3-turbo",
+                model="whisper-large-v3",
                 temperature=0,
                 response_format="verbose_json",
                 language=metadata.language,
