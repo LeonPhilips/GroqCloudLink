@@ -106,7 +106,7 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
             stiched.append(data)
 
         buffer = io.BytesIO()
-        soundfile.write(buffer, np.concatenate(stiched), sample_rate, format="WAV")
+        soundfile.write(buffer, np.concatenate(stiched), sample_rate, format="FLAC")
 
         return buffer.getvalue()
 
@@ -129,4 +129,4 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
                 )
             )
 
-        return "wav", GroqTextToSpeechEntity.__stich(audio_files)
+        return "flac", GroqTextToSpeechEntity.__stich(audio_files)
