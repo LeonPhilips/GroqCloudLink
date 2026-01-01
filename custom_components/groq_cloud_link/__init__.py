@@ -14,36 +14,26 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from custom_components.groq_cloud_link.config_flow import GroqDeviceSettings
-from custom_components.groq_cloud_link.stt import GroqSpeechToTextEntity
-from custom_components.groq_cloud_link.tts import GroqTextToSpeechEntity
-
+from .config_flow import GroqDeviceSettings
 from .const import (
     DOMAIN,
 )
 from .conversation import GroqConversationEntity
 from .number import GroqNumberEntity
 from .sensor import GroqEnumSensor, GroqTimeTrackedEntity
+from .stt import GroqSpeechToTextEntity
+from .tts import GroqTextToSpeechEntity
 
 if TYPE_CHECKING:
     import asyncio
     from collections.abc import AsyncGenerator, Awaitable, Callable
 
-PLATFORMS = [
-    Platform.CONVERSATION,
-    Platform.SENSOR,
-    Platform.NUMBER,
-    Platform.STT,
-    Platform.TTS,
-]
+PLATFORMS = [Platform.CONVERSATION, Platform.SENSOR, Platform.NUMBER, Platform.STT, Platform.TTS]
 
 
-async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry[GroqDevice]
-) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry[GroqDevice]) -> bool:
     """Set up Groq Cloud Link from a config entry."""
-    settings: GroqDeviceSettings = GroqDeviceSettings.unserialize(hass, entry.data)
-    settings.entry_id = entry.entry_id
+    settings: GroqDeviceSettings = GroqDeviceSettings.unserialize(entry.options, entry.entry_id)
     device = GroqDevice(settings)
     await device.prepare(hass)
     hass.data.setdefault(DOMAIN, {})
@@ -224,31 +214,22 @@ class GroqDevice:
     ) -> AsyncGenerator[AssistantContentDeltaDict | None]:
         """Wait for the usage to fall within limits and return."""
         # Wait for request limits
-        request_below_rate_limit_event: asyncio.Event = (
-            await self.entities.requests.wait_for(
-                lambda requests: requests
-                < self.entities.max_requests_per_min.get_value()
-            )
+        request_below_rate_limit_event: asyncio.Event = await self.entities.requests.wait_for(
+            lambda requests: requests < self.entities.max_requests_per_min.get_value()
         )
         if not request_below_rate_limit_event.is_set():
             self.entities.device_status.set(GroqDeviceState.RATE_LIMITED)
-            self.entities.rate_limit_reason.set(
-                GroqDeviceRateLimitReason.REASON_TOO_MANY_REQUESTS
-            )
+            self.entities.rate_limit_reason.set(GroqDeviceRateLimitReason.REASON_TOO_MANY_REQUESTS)
             yield await message_callback("Waiting for request quota...")
             await request_below_rate_limit_event.wait()
 
         # Wait for token limits
-        tokens_below_rate_limit_event: asyncio.Event = (
-            await self.entities.tokens.wait_for(
-                lambda tokens: tokens < self.entities.max_tokens_per_min.get_value()
-            )
+        tokens_below_rate_limit_event: asyncio.Event = await self.entities.tokens.wait_for(
+            lambda tokens: tokens < self.entities.max_tokens_per_min.get_value()
         )
         if not tokens_below_rate_limit_event.is_set():
             self.entities.device_status.set(GroqDeviceState.RATE_LIMITED)
-            self.entities.rate_limit_reason.set(
-                GroqDeviceRateLimitReason.REASON_TOO_MANY_TOKENS
-            )
+            self.entities.rate_limit_reason.set(GroqDeviceRateLimitReason.REASON_TOO_MANY_TOKENS)
             yield await message_callback("Waiting for token quota...")
             await tokens_below_rate_limit_event.wait()
 

@@ -120,7 +120,7 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
                 io.BytesIO(
                     await (
                         await self.device.get_client().audio.speech.create(
-                            model="canopylabs/orpheus-v1-english",
+                            model=self.device.settings.tts_model,
                             voice=self.device.settings.voice,
                             response_format="wav",
                             input=phrase,
