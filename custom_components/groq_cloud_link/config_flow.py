@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any
 
 import groq
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.components.conversation.const import ConversationEntityFeature
 from homeassistant.config_entries import ConfigEntry, ConfigEntryBaseFlow, ConfigFlowResult, ConfigSubentryFlow
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import llm
-from homeassistant.helpers.llm import API, async_get_apis
+from homeassistant.helpers.llm import API, AssistAPI, async_get_apis
 from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
@@ -37,7 +37,7 @@ from .const import (
 from .features import LLMFeatures
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from collections.abc import AsyncGenerator, Callable
     from types import MappingProxyType
 
 
@@ -54,7 +54,8 @@ class GroqDeviceSettings:
     tts_model: str = "canopylabs/orpheus-v1-english"
     stt_model: str = "whisper-large-v3"
     stt_temperature: float = 0.2
-    llm_apis: list[str] = field(default_factory=list)
+    _llm_apis: list[str] = field(default_factory=list)
+    conversation_features: int = 0
     features: list[LLMFeatures] = field(
         default_factory=lambda: [LLMFeatures.ALLOW_BROWSER_SEARCH, LLMFeatures.ALLOW_CODE_EXECUTION],
         metadata={"serialize": False},
@@ -76,11 +77,15 @@ class GroqDeviceSettings:
 
     def get_apis(self, hass: HomeAssistant) -> list[API]:
         """Get the APIs selected."""
-        return [api for api in async_get_apis(hass) if api.id in self.llm_apis]
+        return [api for api in async_get_apis(hass) if api.id in self._llm_apis]
 
     def set_apis(self, apis: list[API]) -> None:
         """Set the APIs selected."""
-        self.llm_apis = [api.id for api in apis]
+        self._llm_apis = [api.id for api in apis]
+        for api in apis:
+            if isinstance(api, AssistAPI):
+                self.conversation_features = ConversationEntityFeature.CONTROL
+                break
 
     @staticmethod
     def unserialize(obj: MappingProxyType[str, Any], entry_id: str) -> GroqDeviceSettings:
@@ -185,7 +190,7 @@ class GroqDeviceSettings:
 
             self.set_apis([api for api in allowed_apis if api.id in (input_getter(CONF_LLM_HASS_API) or [])])
 
-            if self.model not in TOOL_USE_MODELS and len(self.llm_apis) > 0:
+            if self.model not in TOOL_USE_MODELS and len(self._llm_apis) > 0:
                 yield form.async_abort(reason="Model does not support tool use.")
                 return
 
@@ -253,7 +258,7 @@ class GroqDeviceSettings:
 class AuthenticationFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handles the user input for setting up a Groq device."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         """Create the flow object."""

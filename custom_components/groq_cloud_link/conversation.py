@@ -26,7 +26,6 @@ from homeassistant.components.conversation.chat_log import (
     UserContent,
     async_get_chat_log,
 )
-from homeassistant.components.conversation.const import ConversationEntityFeature
 from homeassistant.components.conversation.entity import ConversationEntity
 from homeassistant.components.conversation.models import (
     ConversationInput,
@@ -40,7 +39,6 @@ from homeassistant.helpers.chat_session import async_get_chat_session
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.intent import IntentResponse
-from homeassistant.helpers.llm import AssistAPI
 from homeassistant.util.ulid import ulid_now
 from voluptuous_openapi import convert
 
@@ -71,9 +69,7 @@ async def async_setup_entry(
 
 
 def _fix_invalid_arguments(value: str) -> Any:
-    if (value.startswith("[") and value.endswith("]")) or (
-        value.startswith("{") and value.endswith("}")
-    ):
+    if (value.startswith("[") and value.endswith("]")) or (value.startswith("{") and value.endswith("}")):
         try:
             return json.loads(value)
         except json.decoder.JSONDecodeError:
@@ -115,11 +111,7 @@ class GroqConversationEntity(ConversationEntity):
         super().__init__()
         self.device = device
         self.language: str | None = None
-
-        for api in device.settings.llm_apis:
-            if isinstance(api, AssistAPI):
-                self._attr_supported_features = ConversationEntityFeature.CONTROL
-                break
+        self._attr_supported_features = device.settings.conversation_features
 
     @property
     def name(self) -> str:
@@ -147,16 +139,12 @@ class GroqConversationEntity(ConversationEntity):
             async_get_chat_session(self.hass, user_input.conversation_id) as session,
             async_get_chat_log(self.hass, session, user_input) as chat_log,
         ):
-            intent_response = IntentResponse(
-                language=self.language or "English", intent=None
-            )
+            intent_response = IntentResponse(language=self.language or "English", intent=None)
 
             for _ in range(MAX_TOOL_ITERATIONS):
                 async for content in chat_log.async_add_delta_content_stream(
                     agent_id=self.entity_id,
-                    stream=self._fullfill_request(
-                        chat_log=chat_log, user_input=user_input
-                    ),
+                    stream=self._fullfill_request(chat_log=chat_log, user_input=user_input),
                 ):
                     if isinstance(content, ToolResultContent):
                         pass
@@ -166,16 +154,10 @@ class GroqConversationEntity(ConversationEntity):
 
             # We find the last assistant response for set_speech
             last_message = next(
-                (
-                    item
-                    for item in reversed(chat_log.content)
-                    if isinstance(item, AssistantContent)
-                ),
+                (item for item in reversed(chat_log.content) if isinstance(item, AssistantContent)),
                 None,
             )
-            intent_response.async_set_speech(
-                (last_message is not None and (last_message.content or "")) or ""
-            )
+            intent_response.async_set_speech((last_message is not None and (last_message.content or "")) or "")
             return ConversationResult(
                 response=intent_response,
                 conversation_id=chat_log.conversation_id,
@@ -192,7 +174,7 @@ class GroqConversationEntity(ConversationEntity):
         """
         await chat_log.async_provide_llm_data(
             user_input.as_llm_context(DOMAIN),
-            [api.id for api in self.device.settings.llm_apis],
+            [api.id for api in self.device.settings.get_apis(self.hass)],
             self.device.settings.prompt,
             user_input.extra_system_prompt,
         )
@@ -205,16 +187,10 @@ class GroqConversationEntity(ConversationEntity):
 
         for message in chat_log.content:
             if isinstance(message, SystemContent):
-                chat_history.append(
-                    ChatCompletionSystemMessageParam(
-                        content=message.content, role="system"
-                    )
-                )
+                chat_history.append(ChatCompletionSystemMessageParam(content=message.content, role="system"))
                 continue
             if isinstance(message, UserContent):
-                chat_history.append(
-                    ChatCompletionUserMessageParam(content=message.content, role="user")
-                )
+                chat_history.append(ChatCompletionUserMessageParam(content=message.content, role="user"))
                 continue
             if isinstance(message, AssistantContent):
                 if message.content and message.content.startswith(INTEGRATION_PREFIX):
@@ -224,9 +200,7 @@ class GroqConversationEntity(ConversationEntity):
                 calls = [
                     ChatCompletionMessageToolCallParam(
                         id=call.id,
-                        function=Function(
-                            name=call.tool_name, arguments=json.dumps(call.tool_args)
-                        ),
+                        function=Function(name=call.tool_name, arguments=json.dumps(call.tool_args)),
                         type="function",
                     )
                     for call in (message.tool_calls or [])
@@ -245,8 +219,7 @@ class GroqConversationEntity(ConversationEntity):
                 # We disable networking if the user requested additional privacy.
                 # This way, we cannot accidentally leak the active state of our house.
                 networking_allowed = networking_allowed and (
-                    LLMFeatures.ALLOW_SEARCH_WITH_LIVE_DATA
-                    in self.device.settings.features
+                    LLMFeatures.ALLOW_SEARCH_WITH_LIVE_DATA in self.device.settings.features
                 )
                 chat_history.append(
                     ChatCompletionToolMessageParam(
@@ -274,10 +247,7 @@ class GroqConversationEntity(ConversationEntity):
 
         tool_definitions = domain_fixup(tool_definitions)
 
-        tools = [
-            ChatCompletionToolParam(function=t, type="function")
-            for t in tool_definitions
-        ]
+        tools = [ChatCompletionToolParam(function=t, type="function") for t in tool_definitions]
 
         async def _callback(msg: str) -> AssistantContentDeltaDict:
             chunk: AssistantContentDeltaDict = {
@@ -286,10 +256,7 @@ class GroqConversationEntity(ConversationEntity):
             }
             return chunk
 
-        if (
-            LLMFeatures.ALLOW_BROWSER_SEARCH in self.device.settings.features
-            and networking_allowed
-        ):
+        if LLMFeatures.ALLOW_BROWSER_SEARCH in self.device.settings.features and networking_allowed:
             tools.append(ChatCompletionToolParam(type="browser_search"))
 
         if LLMFeatures.ALLOW_CODE_EXECUTION in self.device.settings.features:
@@ -333,9 +300,7 @@ class GroqConversationEntity(ConversationEntity):
                             llm.ToolInput(
                                 id=call.id or ulid_now(),
                                 tool_name=call.function.name,
-                                tool_args=_fix_invalid_arguments(
-                                    call.function.arguments or "{}"
-                                ),
+                                tool_args=_fix_invalid_arguments(call.function.arguments or "{}"),
                             )
                         )
 
