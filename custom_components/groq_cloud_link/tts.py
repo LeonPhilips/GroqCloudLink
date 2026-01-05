@@ -65,7 +65,9 @@ class GroqTextToSpeechEntity(TextToSpeechEntity):
 
     @staticmethod
     def __split_into_blocks(text: str, max_len: int) -> list[str]:
-        sentences = re.findall(r"[^.!?]+[.!?]", text)
+        sentences = re.split(r"([^.!?]+[.!?]+)", text)
+        if len(sentences) == 0:
+            sentences = [text]
         blocks = []
         current = ""
         for sentence in (s.strip() for s in sentences):
